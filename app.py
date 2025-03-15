@@ -6,8 +6,6 @@ import csv
 
 st.set_page_config(layout='wide')
 
-if "selected_teams" not in st.session_state:
-    st.session_state.selected_teams = []
 
 # --- Helper Functions ---
 def safe_parse_datetime(date_val, time_val):
@@ -180,10 +178,9 @@ if uploaded_file is not None:
     
     # Get unique teams.
     all_teams = sorted(set(df["HOME TEAM"]) | set(df["AWAY TEAM"]))
-    selected_teams = st.multiselect("Select 2 or more teams to check for overlaps:", all_teams, default=st.session_state.selected_teams)
+    selected_teams = st.multiselect("Select 2 or more teams to check for overlaps:", all_teams)
     
     if len(selected_teams) > 0:
-        st.session_state.selected_teams = selected_teams    
         # Filter schedule.
         mask = df["HOME TEAM"].isin(selected_teams) | df["AWAY TEAM"].isin(selected_teams)
         filtered = df[mask].copy().sort_values("Start")
@@ -290,11 +287,6 @@ if uploaded_file is not None:
                 file_name=f"{team}_teamsnap.csv",
                 mime="text/csv"
             )
-            st.session_state.selected_teams = selected_teams
 
-    
-
-
-    
 else:
     st.info("Please upload an Excel file to begin.")
