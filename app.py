@@ -57,9 +57,9 @@ def generate_ics(filtered_df):
     """
     cal = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Soccer Schedule//EN\n"
     # Use current UTC time for dtstamp.
-    dtstamp = datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     for i, row in filtered_df.iterrows():
-        uid = f"event-{i}@nodomain.com"
+        uid = f"event-{i}@soccerschedule.com"
         # Here we assume that Start/End are local times; we format without trailing 'Z'.
         dtstart = row["Start"].strftime("%Y%m%dT%H%M%S")
         dtend   = row["End"].strftime("%Y%m%dT%H%M%S")
@@ -206,29 +206,44 @@ if uploaded_file is not None:
             for j in range(i+1, len(rows)):
                 r1, r2 = rows[i], rows[j]
                 if r1["DATE"] == r2["DATE"]:
-                    gap = r2["Start"] - r1["End"]
-                    if gap <= timedelta(minutes=30):
-                        conflict_type = "Overlapping" if gap.total_seconds() < 0 else "Close (within 30 minutes)"
+                    # Check if games occur at exactly the same time.
+                    if r1["Start"] == r2["Start"] and r1["End"] == r2["End"]:
+                        conflict_type = "Same Time"
+                        gap = timedelta(0)
                         conflicts.append((r1, r2, conflict_type, gap))
-        
+                    else:
+                        gap = r2["Start"] - r1["End"]
+                        if gap <= timedelta(minutes=30):
+                            conflict_type = "Overlapping" if gap.total_seconds() < 0 else "Close (within 30 minutes)"
+                            conflicts.append((r1, r2, conflict_type, gap))
+
         st.subheader("Conflicts")
         if conflicts:
             for idx, (game1, game2, conflict_type, gap) in enumerate(conflicts, 1):
-                with st.expander(f"Conflict {idx} on {game1['DATE'].strftime("%d %b %Y")} – {conflict_type}"):
+                with st.expander(f"Conflict {idx} on {game1['DATE'].strftime('%d %b %Y')} – {conflict_type}"):
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown("**Game 1**")
                         st.write(f"**Match:** {game1['HOME TEAM']} vs {game1['AWAY TEAM']}")
-                        st.write(f"**Time:** {game1['TIME'].strftime('%I:%M %p')} - {game1['End'].strftime('%I:%M %p')}")
+                        st.write(f"**Time:** {game1['Start'].strftime('%I:%M %p')} - {game1['End'].strftime('%I:%M %p')}")
                         st.write(f"**Location:** {game1['LOCATION']}")
                     with col2:
                         st.markdown("**Game 2**")
                         st.write(f"**Match:** {game2['HOME TEAM']} vs {game2['AWAY TEAM']}")
-                        st.write(f"**Time:** {game2['TIME'].strftime('%I:%M %p')} - {game2['End'].strftime('%I:%M %p')}")
+                        st.write(f"**Time:** {game2['Start'].strftime('%I:%M %p')} - {game2['End'].strftime('%I:%M %p')}")
                         st.write(f"**Location:** {game2['LOCATION']}")
-                    st.write(f"**Gap:** {abs(gap)}")
+                    gap_minutes = int(abs(gap.total_seconds()) // 60)
+                    if conflict_type == "Same Time":
+                        gap_str = "Both games at the same time"
+                    elif gap.total_seconds() < 0:
+                        gap_str = f"Overlap by {gap_minutes} minutes"
+                    else:
+                        gap_str = "No gap" if gap_minutes == 0 else f"Gap of {gap_minutes} minutes"
+                    st.write(f"**Gap:** {gap_str}")
         else:
-            st.success("No overlapping or close matches (within 30 minutes) for the selected teams.")
+            st.success("No overlapping, same time, or close matches (within 30 minutes) for the selected teams.")
+
+
         
         # --- Generate Calendar File ---
         ics_content = generate_ics(filtered)
