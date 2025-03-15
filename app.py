@@ -57,9 +57,9 @@ def generate_ics(filtered_df):
     """
     cal = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Soccer Schedule//EN\n"
     # Use current UTC time for dtstamp.
-    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    dtstamp = datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     for i, row in filtered_df.iterrows():
-        uid = f"event-{i}@soccerschedule.com"
+        uid = f"event-{i}@nodomain.com"
         # Here we assume that Start/End are local times; we format without trailing 'Z'.
         dtstart = row["Start"].strftime("%Y%m%dT%H%M%S")
         dtend   = row["End"].strftime("%Y%m%dT%H%M%S")
