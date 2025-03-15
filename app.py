@@ -3,9 +3,9 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import io
 import csv
+import re
 
 st.set_page_config(layout='wide')
-
 
 # --- Helper Functions ---
 def safe_parse_datetime(date_val, time_val):
@@ -36,6 +36,24 @@ def safe_parse_datetime(date_val, time_val):
     except Exception:
         return None
 
+
+pattern = re.compile(r'^(?:LPYSA|WSC|WCYSO|SMYO)\s[BG]-.*?\s([A-Za-z.\'\s-]+)\s*\(')
+
+locations = {
+    'Bensville Park': ['6980 Bensville Rd, White Plains, MD 20695', 'https://maps.app.goo.gl/FZm8NvD5XMVhVZx47'],
+    'Bryantown Sports Complex' : ['5665 Bryantown Rd, Bryantown, MD 20617', 'https://maps.app.goo.gl/odv6gL7fu4meiW1C6'],
+    'Laurel Springs Regional Park' : ['5940 Radio Station Rd, La Plata, MD 20646', 'https://maps.app.goo.gl/mhAL4FwubFKTpfKD9'],
+    'Southern MD Youth Organization (SMYO)' : ['8210 Marshall Corner Rd, Pomfret, MD 20675', 'https://maps.app.goo.gl/xmKutasqBnXCpwgK9'],
+}
+
+
+def get_coach_name(line):
+    match = pattern.match(line)
+    if match:
+        coach = match.group(1).strip()
+        return coach
+    return None
+
 @st.cache_data
 def load_data(uploaded_file):
     df = pd.read_excel(uploaded_file)
@@ -65,7 +83,7 @@ def generate_ics(filtered_df):
         dtstart = row["Start"].strftime("%Y%m%dT%H%M%S")
         dtend   = row["End"].strftime("%Y%m%dT%H%M%S")
         summary = f"{row['HOME TEAM']} vs {row['AWAY TEAM']}"
-        location = row["LOCATION"]
+        location = f"{row['LOCATION']} ({row['SURFACE']}) - {locations.get(row['LOCATION'], '')[1]}" 
         description = f"Game scheduled on {row['DATE'].strftime("%d %b %Y")} at {row['TIME']}, duration: {row['DURATION']} minutes."
         cal += (
             "BEGIN:VEVENT\n"
@@ -129,9 +147,11 @@ def generate_teamsnap_csv(schedule_df, our_team):
         if row["HOME TEAM"] == our_team:
             home_away_flag = "h"
             opponent_name = row["AWAY TEAM"]
+            opponent_contact_name = get_coach_name(row["AWAY TEAM"])
         else:
             home_away_flag = "a"
             opponent_name = row["HOME TEAM"]
+            opponent_contact_name = get_coach_name(row["HOME TEAM"])
 
         # Example logic: "Home uniform" vs "Away uniform"
         uniform_str = "Home uniform" if home_away_flag == "h" else "Away uniform"
@@ -139,12 +159,12 @@ def generate_teamsnap_csv(schedule_df, our_team):
         # Hard-code or customize these fields
         arrival_time = 30
         event_name = "Game"  # or "Practice" if your data indicates so
-        opponent_contact_name = ""
+       
         opponent_contact_phone = ""
         opponent_contact_email = ""
-        location_address = ""
-        location_details = ""
-        location_url = ""
+        location_address = locations.get(row["LOCATION"], "")[0]
+        location_details = row['SURFACE']
+        location_url = locations.get(row["LOCATION"], "")[1]
         extra_label = ""
         notes = ""
 
