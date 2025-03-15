@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import io
 import csv
 
+st.set_page_config(layout='wide')
+
 # --- Helper Functions ---
 def safe_parse_datetime(date_val, time_val):
     if pd.isna(date_val) or pd.isna(time_val):
