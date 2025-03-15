@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+import io
+import csv
 
 # --- Helper Functions ---
 def safe_parse_datetime(date_val, time_val):
@@ -61,7 +63,7 @@ def generate_ics(filtered_df):
         dtend   = row["End"].strftime("%Y%m%dT%H%M%S")
         summary = f"{row['HOME TEAM']} vs {row['AWAY TEAM']}"
         location = row["LOCATION"]
-        description = f"Game scheduled on {row['DATE']} at {row['TIME']}, duration: {row['DURATION']} minutes."
+        description = f"Game scheduled on {row['DATE'].strftime("%d %b %Y")} at {row['TIME']}, duration: {row['DURATION']} minutes."
         cal += (
             "BEGIN:VEVENT\n"
             f"UID:{uid}\n"
@@ -75,6 +77,94 @@ def generate_ics(filtered_df):
         )
     cal += "END:VCALENDAR\n"
     return cal
+
+def generate_teamsnap_csv(schedule_df, our_team):
+    """
+    Create a TeamSnap-compatible CSV as a string for a single 'our_team'.
+    TeamSnap columns (in order):
+    Date,Time,Duration (HH:MM),Arrival Time (Minutes),Name,Opponent Name,
+    Opponent Contact Name,Opponent Contact Phone Number,Opponent Contact E-mail Address,
+    Location Name,Location Address,Location Details,Location URL,Home or Away,
+    Uniform,Extra Label,Notes
+    """
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "Date",
+        "Time",
+        "Duration (HH:MM)",
+        "Arrival Time (Minutes)",
+        "Name",
+        "Opponent Name",
+        "Opponent Contact Name",
+        "Opponent Contact Phone Number",
+        "Opponent Contact E-mail Address",
+        "Location Name",
+        "Location Address",
+        "Location Details",
+        "Location URL",
+        "Home or Away",
+        "Uniform",
+        "Extra Label",
+        "Notes"
+    ])
+
+    for _, row in schedule_df.iterrows():
+        # Convert date/time
+        start_dt = row["Start"]
+        date_str = start_dt.strftime("%m/%d/%Y")
+        time_str = start_dt.strftime("%I:%M %p").lstrip("0")
+        
+        # Convert numeric DURATION (minutes) to "HH:MM"
+        dur_minutes = int(row["DURATION"])
+        hh = dur_minutes // 60
+        mm = dur_minutes % 60
+        duration_str = f"{hh}:{mm:02d}"
+
+        # Determine if 'our_team' is home or away
+        if row["HOME TEAM"] == our_team:
+            home_away_flag = "h"
+            opponent_name = row["AWAY TEAM"]
+        else:
+            home_away_flag = "a"
+            opponent_name = row["HOME TEAM"]
+
+        # Example logic: "Home uniform" vs "Away uniform"
+        uniform_str = "Home uniform" if home_away_flag == "h" else "Away uniform"
+
+        # Hard-code or customize these fields
+        arrival_time = 30
+        event_name = "Game"  # or "Practice" if your data indicates so
+        opponent_contact_name = ""
+        opponent_contact_phone = ""
+        opponent_contact_email = ""
+        location_address = ""
+        location_details = ""
+        location_url = ""
+        extra_label = ""
+        notes = ""
+
+        writer.writerow([
+            date_str,
+            time_str,
+            duration_str,
+            arrival_time,
+            event_name,
+            opponent_name,
+            opponent_contact_name,
+            opponent_contact_phone,
+            opponent_contact_email,
+            row["LOCATION"],
+            location_address,
+            location_details,
+            location_url,
+            home_away_flag,
+            uniform_str,
+            extra_label,
+            notes
+        ])
+    return output.getvalue()
 
 # --- Streamlit App ---
 st.title("Soccer Schedule Conflict Checker")
@@ -98,13 +188,14 @@ if uploaded_file is not None:
         display_df = pd.DataFrame({
             "Date": filtered["DATE"],
             "Match": filtered["HOME TEAM"] + " vs " + filtered["AWAY TEAM"],
-            "Start": filtered["Start"].dt.strftime("%I:%M %p"),
-            "End": filtered["End"].dt.strftime("%I:%M %p"),
+            "Start": filtered["Start"],
+            "End": filtered["End"],
             "Duration (min)": filtered["DURATION"],
             "Location": filtered["LOCATION"]
         })
+        display_df = display_df.style.format({'Date': '{:%d %b %Y}','Start': '{:%I:%M %p}', 'End': '{:%I:%M %p}'})
         st.subheader("Filtered Schedule")
-        st.table(display_df)
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
         
         # --- Conflict Detection (Overlapping or within 30 minutes) ---
         conflicts = []
@@ -121,17 +212,17 @@ if uploaded_file is not None:
         st.subheader("Conflicts")
         if conflicts:
             for idx, (game1, game2, conflict_type, gap) in enumerate(conflicts, 1):
-                with st.expander(f"Conflict {idx} on {game1['DATE']} – {conflict_type}"):
+                with st.expander(f"Conflict {idx} on {game1['DATE'].strftime("%d %b %Y")} – {conflict_type}"):
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown("**Game 1**")
                         st.write(f"**Match:** {game1['HOME TEAM']} vs {game1['AWAY TEAM']}")
-                        st.write(f"**Time:** {game1['TIME']} - {game1['End'].strftime('%I:%M %p')}")
+                        st.write(f"**Time:** {game1['TIME'].strftime('%I:%M %p')} - {game1['End'].strftime('%I:%M %p')}")
                         st.write(f"**Location:** {game1['LOCATION']}")
                     with col2:
                         st.markdown("**Game 2**")
                         st.write(f"**Match:** {game2['HOME TEAM']} vs {game2['AWAY TEAM']}")
-                        st.write(f"**Time:** {game2['TIME']} - {game2['End'].strftime('%I:%M %p')}")
+                        st.write(f"**Time:** {game2['TIME'].strftime('%I:%M %p')} - {game2['End'].strftime('%I:%M %p')}")
                         st.write(f"**Location:** {game2['LOCATION']}")
                     st.write(f"**Gap:** {abs(gap)}")
         else:
@@ -140,10 +231,43 @@ if uploaded_file is not None:
         # --- Generate Calendar File ---
         ics_content = generate_ics(filtered)
         st.download_button(
-            label="Download Calendar (.ics)",
+            label="Download Calendar for All Selected Teams (.ics)",
             data=ics_content,
             file_name="filtered_schedule.ics",
             mime="text/calendar",
         )
+
+        # If multiple teams are selected, we generate a separate CSV for each.
+        for team in selected_teams:
+            st.subheader(f"Team: {team}")
+            
+            # Filter rows where this team is either home or away
+            mask = (df["HOME TEAM"] == team) | (df["AWAY TEAM"] == team)
+            team_schedule = df[mask].sort_values("Start")
+
+            # Show the schedule in a small table
+            team_schedule['DATE_'] = team_schedule['DATE'].dt.strftime("%d %b %Y")
+
+            st.dataframe(team_schedule[["DATE", "TIME", "DURATION", "HOME TEAM", "AWAY TEAM", "LOCATION"]].style.format({'DATE': '{:%d %b %Y}','TIME': '{:%I:%M %p}'}), use_container_width=True, hide_index=True)
+
+            # Create the CSV content for that single team
+            csv_str = generate_teamsnap_csv(team_schedule, our_team=team)
+
+            ics_content = generate_ics(filtered)
+            
+            st.download_button(
+                label=f"Download Calendar for {team} (.ics)",
+                data=ics_content,
+                file_name=f"{team}_schedule.ics",
+                mime="text/calendar",
+            )
+
+            # Provide a download button for that team's CSV
+            st.download_button(
+                label=f"Download TeamSnap CSV for {team}",
+                data=csv_str,
+                file_name=f"{team}_teamsnap.csv",
+                mime="text/csv"
+            )
 else:
     st.info("Please upload an Excel file to begin.")
