@@ -36,8 +36,8 @@ def safe_parse_datetime(date_val, time_val):
     except Exception:
         return None
 
-
-pattern = re.compile(r'^(?:LPYSA|WSC|WCYSO|SMYO)\s[BG]-.*?\s([A-Za-z.\'\s-]+)\s*\(')
+# Attempt to extract the coach name from a team name.
+pattern = re.compile(r"^(?:LPYSA|WSC|WCYSO|SMYO)\b.*\b([A-Za-z.'-]+)(?=\s*\(|$)")
 
 locations = {
     'Bensville Park': ['6980 Bensville Rd, White Plains, MD 20695', 'https://maps.app.goo.gl/FZm8NvD5XMVhVZx47'],
